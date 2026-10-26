@@ -21,5 +21,4 @@ canvas {
   aspect-ratio: 9 / 16;
   background: #0b1530;
   cursor: pointer;
-  image-rendering: pixelated;   /* phóng to kiểu pixel vuông, không làm mờ */
 }
