@@ -4,22 +4,29 @@ var ctx = canvas.getContext("2d");   // "bút vẽ" cho màn hình chính
 var W = canvas.width;                // 360
 var H = canvas.height;               // 640
 
+// Vẽ ở độ phân giải cao (S lần) rồi thu về vừa khung, để ảnh Ronaldo và chữ luôn NÉT.
+// Toạ độ trong game vẫn tính theo 360 x 640 như cũ.
+var S = Math.min(3, Math.max(2, Math.ceil(window.devicePixelRatio || 1)));
+canvas.width = W * S;
+canvas.height = H * S;
+ctx.setTransform(S, 0, 0, S, 0, 0);
+
 // --- Độ khó (thử đổi để xem game thay đổi thế nào) ---
 var GRAVITY = 1500;      // lực kéo xuống
 var FLAP = -420;         // vận tốc bay lên mỗi lần bấm (số âm = đi lên)
 var PIPE_SPEED = 140;    // tốc độ cúp chạy sang trái
-var GAP = 170;           // khe hở giữa cúp trên và cúp dưới
+var GAP = 175;           // khe hở giữa cúp trên và cúp dưới
 var SPAWN_EVERY = 1.6;   // cứ mấy giây có một cặp cúp mới
 var PIPE_W = 64;         // bề rộng một cúp
 var PIPE_INSET = 12;     // phần mép cúp được "tha" khi tính va chạm (cho dễ chơi)
 var GROUND = 90;         // chiều cao sân cỏ
 var PLAYER_X = 90;       // vị trí ngang cố định của Ronaldo
-var RADIUS = 18;         // vùng va chạm của Ronaldo
+var RADIUS = 24;         // vùng va chạm của Ronaldo
 
 // --- Phong cách pixel ---
 var PX = 2;              // 1 "ô pixel" của phong cảnh = 2 điểm ảnh màn hình (tăng lên 3, 4 để pixel to hơn)
-var PIXEL = 2;           // độ vỡ hạt của Ronaldo (1 = ảnh mịn, 2 hoặc 3 = pixel)
-var BOX = 64;            // khung tối đa của Ronaldo (px)
+var PIXEL = 1;           // độ vỡ hạt của Ronaldo (1 = ảnh nét, 2 hoặc 3 = vỡ hạt pixel)
+var BOX = 84;            // khung tối đa của Ronaldo (tăng lên nếu muốn to hơn)
 var SIZE = 52;           // kích thước hình dự phòng khi chưa có ảnh
 var LW = W / PX, LH = H / PX;      // kích thước "tấm vẽ nhỏ": 180 x 320
 var GY = (H - GROUND) / PX;        // vị trí mặt sân trên tấm vẽ nhỏ
@@ -47,7 +54,8 @@ function buildSprite() {
   var s = Math.min(BOX / img.naturalWidth, BOX / img.naturalHeight);
   var w = Math.max(1, Math.round(img.naturalWidth * s));
   var h = Math.max(1, Math.round(img.naturalHeight * s));
-  var tw = Math.max(1, Math.round(w / PIXEL)), th = Math.max(1, Math.round(h / PIXEL));
+  var res = (PIXEL === 1) ? S : 1 / PIXEL;       // PIXEL=1: giữ đủ chi tiết cho màn hình nét
+  var tw = Math.max(1, Math.round(w * res)), th = Math.max(1, Math.round(h * res));
   var src = img, sw = img.naturalWidth, sh = img.naturalHeight;
   while (sw / 2 > tw && sh / 2 > th) {          // thu nhỏ từng nửa một cho ảnh đỡ rỗ
     var c1 = document.createElement("canvas");
@@ -66,7 +74,7 @@ function buildSprite() {
   sc.globalCompositeOperation = "source-in";
   sc.fillStyle = "#ffffff";
   sc.fillRect(0, 0, tw, th);
-  sprite = { c: c, sil: sil, w: w, h: h, k: w / tw };
+  sprite = { c: c, sil: sil, w: w, h: h, k: (PIXEL === 1 ? 1.5 : PIXEL) };   // k = độ dày viền trắng
 }
 
 // ===== 3. HÀM VẼ PIXEL =====
