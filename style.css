@@ -1,0 +1,25 @@
+html, body {
+  margin: 0;
+  height: 100%;
+  background: #0b1530;
+  overflow: hidden;
+  touch-action: none;          /* chặn cuộn/zoom khi chạm màn hình */
+  -webkit-user-select: none;
+  user-select: none;
+}
+
+body {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+}
+
+canvas {
+  /* Giữ tỉ lệ 9:16, vừa khít màn hình máy tính lẫn điện thoại */
+  width: min(100vw, 56.25vh);
+  height: auto;
+  aspect-ratio: 9 / 16;
+  background: #0b1530;
+  cursor: pointer;
+  image-rendering: pixelated;   /* phóng to kiểu pixel vuông, không làm mờ */
+}
