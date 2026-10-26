@@ -253,17 +253,193 @@ function reset() {
 }
 reset();
 
+// ===== 6B. ÂM THANH =====
+// Cách hoạt động: nếu trong thư mục có file siuuu.mp3 (tiếng "Siuuu") và crowd.mp3 (tiếng khán giả)
+// thì game dùng đúng hai file đó. Nếu KHÔNG có file, game tự tạo âm thanh giả lập bằng code.
+var muted = false;
+var audioStarted = false;       // trình duyệt chỉ cho phát tiếng SAU khi người chơi bấm lần đầu
+var audioCtx = null, master = null, noiseBuf = null;
+var siuFile = null, siuFileOk = false;
+var crowdFile = null, crowdFileOk = false;
+var crowdSynth = null, siuVoice = null;
+
+function safePlay(el) {
+  try { var pr = el.play(); if (pr && pr.catch) pr.catch(function () {}); } catch (e) {}
+}
+
+function loadAudioFiles() {
+  try {
+    siuFile = new Audio("siuuu.mp3");
+    siuFile.preload = "auto";
+    siuFile.addEventListener("canplaythrough", function () { siuFileOk = true; });
+    siuFile.addEventListener("error", function () { siuFileOk = false; });
+    crowdFile = new Audio("crowd.mp3");
+    crowdFile.preload = "auto";
+    crowdFile.loop = true;
+    crowdFile.volume = 0.5;
+    crowdFile.addEventListener("canplaythrough", function () {
+      crowdFileOk = true;
+      if (audioStarted) { stopCrowdSynth(); if (!muted) safePlay(crowdFile); }   // có file thật thì bỏ bản giả lập
+    });
+    crowdFile.addEventListener("error", function () { crowdFileOk = false; });
+  } catch (e) {}
+}
+
+function startAudio() {                       // gọi ở lần bấm đầu tiên
+  if (audioStarted) return;
+  audioStarted = true;
+  try {
+    var AC = window.AudioContext || window.webkitAudioContext;
+    audioCtx = new AC();
+    master = audioCtx.createGain();
+    master.gain.value = muted ? 0 : 1;
+    master.connect(audioCtx.destination);
+    var n = audioCtx.sampleRate * 2;           // 2 giây nhiễu trắng, dùng làm nguyên liệu
+    noiseBuf = audioCtx.createBuffer(1, n, audioCtx.sampleRate);
+    var d = noiseBuf.getChannelData(0);
+    for (var i = 0; i < n; i++) d[i] = Math.random() * 2 - 1;
+  } catch (e) { audioCtx = null; }
+  try { siuFile.load(); crowdFile.load(); } catch (e) {}   // một số điện thoại chỉ chịu tải file sau lần bấm đầu
+  if (crowdFileOk) { if (!muted) safePlay(crowdFile); }
+  else startCrowdSynth();
+}
+
+// --- Tiếng khán giả giả lập: nhiễu lọc, to nhỏ theo từng đợt sóng, thỉnh thoảng hò reo to lên ---
+function startCrowdSynth() {
+  if (!audioCtx || crowdSynth) return;
+  var src = audioCtx.createBufferSource();
+  src.buffer = noiseBuf; src.loop = true;
+  var bp = audioCtx.createBiquadFilter(); bp.type = "bandpass"; bp.frequency.value = 900; bp.Q.value = 0.5;
+  var lp = audioCtx.createBiquadFilter(); lp.type = "lowpass"; lp.frequency.value = 3000;
+  var g = audioCtx.createGain(); g.gain.value = 0.2;
+  src.connect(bp); bp.connect(lp); lp.connect(g); g.connect(master);
+  var lfo = audioCtx.createOscillator(); lfo.frequency.value = 0.18;        // sóng to nhỏ chậm
+  var lg = audioCtx.createGain(); lg.gain.value = 0.07;
+  lfo.connect(lg); lg.connect(g.gain);
+  var lfo2 = audioCtx.createOscillator(); lfo2.frequency.value = 0.11;      // âm sắc đổi nhẹ
+  var lg2 = audioCtx.createGain(); lg2.gain.value = 350;
+  lfo2.connect(lg2); lg2.connect(bp.frequency);
+  src.start(); lfo.start(); lfo2.start();
+  crowdSynth = { src: src, lfo: lfo, lfo2: lfo2, g: g };
+  scheduleCheer();
+}
+function stopCrowdSynth() {
+  if (!crowdSynth) return;
+  try { crowdSynth.src.stop(); crowdSynth.lfo.stop(); crowdSynth.lfo2.stop(); } catch (e) {}
+  crowdSynth = null;
+}
+function scheduleCheer() {                    // mỗi 4-9 giây khán giả hò reo to lên một nhịp
+  setTimeout(function () {
+    if (!crowdSynth || !audioCtx) return;
+    var t = audioCtx.currentTime, gp = crowdSynth.g.gain;
+    gp.setTargetAtTime(0.38, t, 0.15);
+    gp.setTargetAtTime(0.2, t + 0.9, 0.5);
+    scheduleCheer();
+  }, 4000 + Math.random() * 5000);
+}
+
+// --- Tiếng "Siuuu" ---
+function playSiu() {
+  if (muted || !audioStarted) return;
+  if (siuFileOk) { try { siuFile.currentTime = 0; } catch (e) {} safePlay(siuFile); return; }
+  playSiuSynth();
+}
+// Bản giả lập: "S" (nhiễu cao) + nguyên âm "i" trượt sang "uuu" với cao độ lên rồi xuống.
+// Đây chỉ là âm thanh TỔNG HỢP gần giống, không phải giọng thật; muốn giống thật hãy dùng file siuuu.mp3.
+function playSiuSynth() {
+  if (!audioCtx) return;
+  if (audioCtx.state === "suspended") audioCtx.resume();
+  var t = audioCtx.currentTime;
+  if (siuVoice) {                              // bấm dồn: tắt nhanh tiếng cũ để không bị chồng chéo
+    try { siuVoice.out.gain.setTargetAtTime(0, t, 0.03); siuVoice.osc.stop(t + 0.15); } catch (e) {}
+  }
+  var t0 = t + 0.1, dur = 1.25;
+  var out = audioCtx.createGain();
+  out.gain.setValueAtTime(0, t0);
+  out.gain.linearRampToValueAtTime(0.8, t0 + 0.06);
+  out.gain.setValueAtTime(0.8, t0 + 0.7);
+  out.gain.exponentialRampToValueAtTime(0.001, t0 + dur);
+  out.connect(master);
+
+  var osc = audioCtx.createOscillator(); osc.type = "sawtooth";
+  osc.frequency.setValueAtTime(190, t0);
+  osc.frequency.linearRampToValueAtTime(285, t0 + 0.3);
+  osc.frequency.linearRampToValueAtTime(265, t0 + 0.8);
+  osc.frequency.linearRampToValueAtTime(215, t0 + dur);
+  var vib = audioCtx.createOscillator(); vib.frequency.value = 5.5;           // rung giọng nhẹ
+  var vg = audioCtx.createGain(); vg.gain.value = 6;
+  vib.connect(vg); vg.connect(osc.frequency);
+
+  var f1 = audioCtx.createBiquadFilter(); f1.type = "bandpass"; f1.frequency.value = 320; f1.Q.value = 6;
+  var f2 = audioCtx.createBiquadFilter(); f2.type = "bandpass"; f2.Q.value = 8;
+  f2.frequency.setValueAtTime(2300, t0);
+  f2.frequency.exponentialRampToValueAtTime(850, t0 + 0.28);                  // "i" trượt thành "u"
+  var g1 = audioCtx.createGain(); g1.gain.value = 1;
+  var g2 = audioCtx.createGain(); g2.gain.value = 0.6;
+  osc.connect(f1); f1.connect(g1); g1.connect(out);
+  osc.connect(f2); f2.connect(g2); g2.connect(out);
+
+  var ns = audioCtx.createBufferSource(); ns.buffer = noiseBuf;               // phụ âm "S"
+  var hp = audioCtx.createBiquadFilter(); hp.type = "highpass"; hp.frequency.value = 5000;
+  var ng = audioCtx.createGain();
+  ng.gain.setValueAtTime(0, t); ng.gain.linearRampToValueAtTime(0.35, t + 0.03); ng.gain.linearRampToValueAtTime(0, t + 0.14);
+  ns.connect(hp); hp.connect(ng); ng.connect(master);
+
+  osc.start(t0); vib.start(t0); ns.start(t); ns.stop(t + 0.2);
+  osc.stop(t0 + dur + 0.05); vib.stop(t0 + dur + 0.05);
+  siuVoice = { osc: osc, out: out };
+}
+
+function toggleMute() {
+  muted = !muted;
+  if (master) master.gain.value = muted ? 0 : 1;
+  if (crowdFile) { crowdFile.muted = muted; if (!muted && audioStarted && crowdFileOk) safePlay(crowdFile); }
+  if (siuFile) siuFile.muted = muted;
+}
+
+document.addEventListener("visibilitychange", function () {    // rời tab thì tắt nhạc, quay lại thì bật tiếp
+  if (!audioStarted) return;
+  if (document.hidden) {
+    if (crowdFile) crowdFile.pause();
+    if (audioCtx && audioCtx.suspend) audioCtx.suspend();
+  } else {
+    if (audioCtx && audioCtx.resume) audioCtx.resume();
+    if (crowdFileOk && !muted) safePlay(crowdFile);
+  }
+});
+
+function drawSpeaker() {                         // nút loa ở góc phải trên: bấm để bật/tắt tiếng (hoặc phím M)
+  var x = W - 38, y = 14;
+  ctx.fillStyle = "rgba(0,0,0,0.45)"; ctx.fillRect(x - 6, y - 6, 34, 30);
+  ctx.fillStyle = "#ffffff"; ctx.fillRect(x, y + 5, 6, 8);
+  ctx.beginPath(); ctx.moveTo(x + 6, y + 5); ctx.lineTo(x + 14, y); ctx.lineTo(x + 14, y + 18); ctx.lineTo(x + 6, y + 13); ctx.fill();
+  if (muted) {
+    ctx.strokeStyle = "#ff5a4a"; ctx.lineWidth = 3;
+    ctx.beginPath(); ctx.moveTo(x + 17, y + 4); ctx.lineTo(x + 25, y + 14); ctx.moveTo(x + 25, y + 4); ctx.lineTo(x + 17, y + 14); ctx.stroke();
+  } else {
+    ctx.fillStyle = "#ffffff"; ctx.fillRect(x + 18, y + 6, 2, 6); ctx.fillRect(x + 22, y + 3, 2, 12);
+  }
+}
+
 // ===== 7. ĐIỀU KHIỂN: bấm chuột / chạm màn hình / phím Space =====
 function flap() {
-  if (state === "ready") { state = "play"; vy = FLAP; }
-  else if (state === "play") { vy = FLAP; }
+  startAudio();                                     // lần bấm đầu tiên mới được phép bật âm thanh
+  if (state === "ready") { state = "play"; vy = FLAP; playSiu(); }
+  else if (state === "play") { vy = FLAP; playSiu(); }   // mỗi lần bay lên là một tiếng "Siuuu"
   else if (state === "over" && overTime > 0.4) { reset(); }
 }
-window.addEventListener("pointerdown", flap);
+window.addEventListener("pointerdown", function (e) {
+  var r = canvas.getBoundingClientRect();           // đổi toạ độ chuột sang toạ độ game
+  var x = (e.clientX - r.left) / r.width * W, yy = (e.clientY - r.top) / r.height * H;
+  if (x > W - 46 && yy < 46) { startAudio(); toggleMute(); return; }   // bấm vào nút loa
+  flap();
+});
 window.addEventListener("keydown", function (e) {
   if ((e.code === "Space" || e.code === "ArrowUp") && !e.repeat) {
     e.preventDefault();
     flap();
+  } else if (e.code === "KeyM" && !e.repeat) {
+    startAudio(); toggleMute();
   }
 });
 
@@ -403,6 +579,7 @@ function draw() {
 
   // Bước 3: Ronaldo và chữ
   drawPlayer();
+  drawSpeaker();
   if (state === "ready") {
     text("FLAPPY RONALDO", W / 2, 150, 30, "#ffd24a");
     text("Chạm màn hình hoặc nhấn Space", W / 2, 590, 15);
@@ -421,6 +598,7 @@ function draw() {
 }
 
 // ===== 10. VÒNG LẶP GAME =====
+loadAudioFiles();
 bg = [buildBG(0), buildBG(1)];       // vẽ sẵn 2 phiên bản phong cảnh (khán giả 2 tư thế)
 
 function frame(t) {
